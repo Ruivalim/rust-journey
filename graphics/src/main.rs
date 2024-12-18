@@ -3,7 +3,7 @@ use ggez::{
     event::{self, EventHandler},
     glam::Vec2,
     graphics::{self, Color, Mesh, PxScale, Rect, TextFragment},
-    mint, GameResult,
+    GameResult,
 };
 use rand::{rngs::ThreadRng, thread_rng, Rng};
 
@@ -18,7 +18,6 @@ struct Object {
     dir_x: f32,
     dir_y: f32,
     color: Color,
-    rng: ThreadRng,
     movement_speed: f32,
 }
 
@@ -32,82 +31,30 @@ impl Object {
         )
     }
 
-    fn random_move(&mut self) {
+    fn random_move(&mut self, rng: &mut ThreadRng) {
         if self.move_x == 0.0 && self.move_y == 0.0 {
-            self.move_x = self.rng.gen_range(0.0..200.0);
-            self.move_y = self.rng.gen_range(0.0..200.0);
-            self.dir_x = if self.rng.gen() { -1.0 } else { 1.0 };
-            self.dir_y = if self.rng.gen() { -1.0 } else { 1.0 }
+            self.move_x = rng.gen_range(0.0..200.0);
+            self.move_y = rng.gen_range(0.0..200.0);
+            self.dir_x = if rng.gen() { -1.0 } else { 1.0 };
+            self.dir_y = if rng.gen() { -1.0 } else { 1.0 };
         }
     }
 
-    fn walk(&mut self, world_bounder_x: f32, world_bounder_y: f32) {
-        if self.move_x != 0.0 {
-            let mut new_x = self.pos_x + (self.movement_speed * self.dir_x);
-            self.move_x -= self.movement_speed;
+    fn walk(&mut self, world_bounder_x: f32, world_bounder_y: f32, delta_time: f32) {
+        let movement = self.movement_speed * delta_time;
 
-            if self.move_x < 0.0 {
-                self.move_x = 0.0
-            }
-
-            if new_x < 0.0 {
-                new_x = 0.0;
-            }
-
-            if new_x > (world_bounder_x - self.width) {
-                new_x = world_bounder_x - self.width;
-            }
-
+        if self.move_x > 0.0 {
+            let new_x =
+                (self.pos_x + (movement * self.dir_x)).clamp(0.0, world_bounder_x - self.width);
+            self.move_x = (self.move_x - movement).max(0.0);
             self.pos_x = new_x;
         }
-        if self.move_y != 0.0 {
-            let mut new_y = self.pos_y + (self.movement_speed * self.dir_y);
-            self.move_y -= self.movement_speed;
-
-            if self.move_y < 0.0 {
-                self.move_y = 0.0
-            }
-
-            if new_y < 0.0 {
-                new_y = 0.0;
-            }
-            if new_y > (world_bounder_y - self.height) {
-                new_y = world_bounder_y - self.height;
-            }
-
+        if self.move_y > 0.0 {
+            let new_y =
+                (self.pos_y + (movement * self.dir_y)).clamp(0.0, world_bounder_y - self.height);
+            self.move_y = (self.move_y - movement).max(0.0);
             self.pos_y = new_y;
         }
-    }
-
-    fn _random_movement(&mut self, world_bounder_x: f32, world_bounder_y: f32) {
-        let rand_x = self
-            .rng
-            .gen_range(-self.movement_speed..self.movement_speed);
-        let rand_y = self
-            .rng
-            .gen_range(-self.movement_speed..self.movement_speed);
-        let mut new_x: f32;
-        let mut new_y: f32;
-
-        new_x = self.pos_x + rand_x;
-        new_y = self.pos_y + rand_y;
-
-        if self.pos_x < 0.0 {
-            new_x = 0.0
-        }
-
-        if self.pos_y < 0.0 {
-            new_y = 0.0;
-        }
-
-        if self.pos_x > (world_bounder_x - self.width) {
-            new_x = world_bounder_x - self.width
-        }
-        if self.pos_y > (world_bounder_y - self.height) {
-            new_y = world_bounder_y - self.height
-        }
-        self.pos_x = new_x;
-        self.pos_y = new_y;
     }
 }
 
@@ -119,7 +66,12 @@ struct MainState {
 }
 
 impl MainState {
-    fn new(width: f32, height: f32, objects_count: i32) -> GameResult<MainState> {
+    fn new(
+        _ctx: &ggez::Context,
+        width: f32,
+        height: f32,
+        objects_count: i32,
+    ) -> GameResult<MainState> {
         let mut rng = thread_rng();
         let mut objects = vec![];
 
@@ -138,8 +90,7 @@ impl MainState {
                 pos_x: (width / 2.0) - (obj_width / 2.0),
                 pos_y: (height / 2.0) - (obj_height / 2.0),
                 color: obj_color,
-                rng: thread_rng(),
-                movement_speed: rng.gen_range(1.0..10.0),
+                movement_speed: rng.gen_range(100.0..200.0),
                 move_x: 0.0,
                 move_y: 0.0,
                 dir_x: 0.0,
@@ -159,19 +110,28 @@ impl MainState {
 }
 
 impl EventHandler for MainState {
-    fn update(&mut self, ctx: &mut ggez::Context) -> Result<(), ggez::GameError> {
-        let (width, height) = ctx.gfx.drawable_size();
-
+    fn resize_event(
+        &mut self,
+        _ctx: &mut ggez::Context,
+        width: f32,
+        height: f32,
+    ) -> Result<(), ggez::GameError> {
         self.canvas_height = height;
         self.canvas_width = width;
 
-        if ctx.time.check_update_time(30) {
-            for obj in self.objects.iter_mut() {
-                if self.rng.gen() && self.rng.gen() {
-                    obj.random_move();
-                }
-                obj.walk(self.canvas_width, self.canvas_height);
+        Ok(())
+    }
+
+    fn update(&mut self, ctx: &mut ggez::Context) -> Result<(), ggez::GameError> {
+        for obj in self.objects.iter_mut() {
+            if self.rng.gen() && self.rng.gen() {
+                obj.random_move(&mut self.rng);
             }
+            obj.walk(
+                self.canvas_width,
+                self.canvas_height,
+                ctx.time.delta().as_secs_f32(),
+            );
         }
 
         Ok(())
@@ -185,7 +145,6 @@ impl EventHandler for MainState {
             canvas.draw(
                 &mesh,
                 graphics::DrawParam::new().dest(Vec2::new(obj.pos_x, obj.pos_y)),
-                //graphics::DrawParam::new().dest(Vec2::new(0.0, self.canvas_height - obj.height)),
             )
         }
 
@@ -212,7 +171,8 @@ fn main() {
             .resizable(true),
     );
     let (ctx, event_loop) = context_builder.build().unwrap();
+
     let objects_count = 100;
-    let state = MainState::new(width, height, objects_count).unwrap();
+    let state = MainState::new(&ctx, width, height, objects_count).unwrap();
     event::run(ctx, event_loop, state)
 }
