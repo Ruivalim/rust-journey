@@ -2,10 +2,12 @@ use ggez::{
     conf::WindowMode,
     event::{self, EventHandler},
     glam::Vec2,
-    graphics::{self, Color, Mesh, PxScale, Rect, TextFragment},
+    graphics::{self, Color, DrawParam, Mesh, MeshBuilder, PxScale, Rect, TextFragment},
     GameResult,
 };
 use rand::{rngs::ThreadRng, thread_rng, Rng};
+
+const SCALE: f32 = 1.0;
 
 struct Object {
     id: i32,
@@ -22,13 +24,11 @@ struct Object {
 }
 
 impl Object {
-    fn render(&self, ctx: &ggez::Context) -> GameResult<Mesh> {
-        Mesh::new_rectangle(
-            ctx,
-            graphics::DrawMode::fill(),
-            Rect::new(0.0, 0.0, self.width, self.height),
-            self.color,
-        )
+    fn build(&self) -> DrawParam {
+        DrawParam::new()
+            .dest(Vec2::new(self.pos_x, self.pos_y))
+            .scale(Vec2::new(self.width, self.height))
+            .color(self.color)
     }
 
     fn random_move(&mut self, rng: &mut ThreadRng) {
@@ -60,6 +60,8 @@ impl Object {
 
 struct MainState {
     objects: Vec<Object>,
+    mesh_batch: graphics::InstanceArray,
+    mesh: graphics::Mesh,
     canvas_width: f32,
     canvas_height: f32,
     rng: ThreadRng,
@@ -67,7 +69,7 @@ struct MainState {
 
 impl MainState {
     fn new(
-        _ctx: &ggez::Context,
+        ctx: &ggez::Context,
         width: f32,
         height: f32,
         objects_count: i32,
@@ -85,8 +87,8 @@ impl MainState {
 
             objects.push(Object {
                 id: id,
-                width: obj_width,
-                height: obj_height,
+                width: obj_width / SCALE,
+                height: obj_height / SCALE,
                 pos_x: (width / 2.0) - (obj_width / 2.0),
                 pos_y: (height / 2.0) - (obj_height / 2.0),
                 color: obj_color,
@@ -98,12 +100,27 @@ impl MainState {
             });
         }
 
-        let state = MainState {
+        let mesh = graphics::Mesh::from_data(
+            ctx,
+            graphics::MeshBuilder::new()
+                .rectangle(
+                    graphics::DrawMode::fill(),
+                    Rect::new(0.0, 0.0, SCALE, SCALE),
+                    Color::WHITE,
+                )?
+                .build(),
+        );
+
+        let mut state = MainState {
             objects,
             canvas_width: width,
             canvas_height: height,
             rng: thread_rng(),
+            mesh_batch: graphics::InstanceArray::new(ctx, None),
+            mesh,
         };
+
+        state.mesh_batch.resize(ctx, objects_count as usize);
 
         Ok(state)
     }
@@ -134,19 +151,17 @@ impl EventHandler for MainState {
             );
         }
 
+        let instance_params = self.objects.iter().map(|obj| obj.build());
+
+        self.mesh_batch.set(instance_params);
+
         Ok(())
     }
 
     fn draw(&mut self, ctx: &mut ggez::Context) -> Result<(), ggez::GameError> {
         let mut canvas = graphics::Canvas::from_frame(ctx, graphics::Color::CYAN);
 
-        for obj in self.objects.iter_mut() {
-            let mesh = obj.render(ctx)?;
-            canvas.draw(
-                &mesh,
-                graphics::DrawParam::new().dest(Vec2::new(obj.pos_x, obj.pos_y)),
-            )
-        }
+        canvas.draw_instanced_mesh(self.mesh.clone(), &self.mesh_batch, DrawParam::default());
 
         canvas.draw(
             &graphics::Text::new(
@@ -172,7 +187,7 @@ fn main() {
     );
     let (ctx, event_loop) = context_builder.build().unwrap();
 
-    let objects_count = 100;
+    let objects_count = 50000;
     let state = MainState::new(&ctx, width, height, objects_count).unwrap();
     event::run(ctx, event_loop, state)
 }
