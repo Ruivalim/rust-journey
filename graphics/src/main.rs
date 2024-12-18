@@ -2,7 +2,7 @@ use ggez::{
     conf::WindowMode,
     event::{self, EventHandler},
     glam::Vec2,
-    graphics::{self, Color, DrawParam, Mesh, MeshBuilder, PxScale, Rect, TextFragment},
+    graphics::{self, Color, DrawParam, PxScale, Rect, TextFragment},
     GameResult,
 };
 use rand::{rngs::ThreadRng, thread_rng, Rng};
