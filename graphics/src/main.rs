@@ -10,7 +10,6 @@ use rand::{rngs::ThreadRng, thread_rng, Rng};
 const SCALE: f32 = 1.0;
 
 struct Object {
-    id: i32,
     width: f32,
     height: f32,
     pos_x: f32,
@@ -44,23 +43,44 @@ impl Object {
         let movement = self.movement_speed * delta_time;
 
         if self.move_x > 0.0 {
-            let new_x =
+            self.pos_x =
                 (self.pos_x + (movement * self.dir_x)).clamp(0.0, world_bounder_x - self.width);
             self.move_x = (self.move_x - movement).max(0.0);
-            self.pos_x = new_x;
         }
         if self.move_y > 0.0 {
-            let new_y =
+            self.pos_y =
                 (self.pos_y + (movement * self.dir_y)).clamp(0.0, world_bounder_y - self.height);
             self.move_y = (self.move_y - movement).max(0.0);
-            self.pos_y = new_y;
+        }
+    }
+
+    pub fn spawn(pos_x: f32, pos_y: f32, rng: &mut ThreadRng) -> Object {
+        let obj_width = rng.gen_range(30.0..60.0);
+        let obj_height = rng.gen_range(30.0..60.0);
+        let r = rng.gen_range(0..250);
+        let g = rng.gen_range(0..250);
+        let b = rng.gen_range(0..250);
+        let obj_color = Color::from_rgb(r, g, b);
+
+        Object {
+            width: obj_width / SCALE,
+            height: obj_height / SCALE,
+            pos_x: pos_x - (obj_width / 2.0),
+            pos_y: pos_y - (obj_height / 2.0),
+            color: obj_color,
+            movement_speed: rng.gen_range(100.0..200.0),
+            move_x: 0.0,
+            move_y: 0.0,
+            dir_x: 0.0,
+            dir_y: 0.0,
         }
     }
 }
 
 struct MainState {
-    objects: Vec<Object>,
-    mesh_batch: graphics::InstanceArray,
+    pub objects: Vec<Object>,
+    pub mesh_batch: graphics::InstanceArray,
+    pub objects_count: usize,
     mesh: graphics::Mesh,
     canvas_width: f32,
     canvas_height: f32,
@@ -77,27 +97,8 @@ impl MainState {
         let mut rng = thread_rng();
         let mut objects = vec![];
 
-        for id in 0..objects_count {
-            let obj_width = rng.gen_range(30.0..60.0);
-            let obj_height = rng.gen_range(30.0..60.0);
-            let r = rng.gen_range(0..250);
-            let g = rng.gen_range(0..250);
-            let b = rng.gen_range(0..250);
-            let obj_color = Color::from_rgb(r, g, b);
-
-            objects.push(Object {
-                id: id,
-                width: obj_width / SCALE,
-                height: obj_height / SCALE,
-                pos_x: (width / 2.0) - (obj_width / 2.0),
-                pos_y: (height / 2.0) - (obj_height / 2.0),
-                color: obj_color,
-                movement_speed: rng.gen_range(100.0..200.0),
-                move_x: 0.0,
-                move_y: 0.0,
-                dir_x: 0.0,
-                dir_y: 0.0,
-            });
+        for _ in 0..objects_count {
+            objects.push(Object::spawn(width / 2.0, height / 2.0, &mut rng));
         }
 
         let mesh = graphics::Mesh::from_data(
@@ -118,11 +119,20 @@ impl MainState {
             rng: thread_rng(),
             mesh_batch: graphics::InstanceArray::new(ctx, None),
             mesh,
+            objects_count: objects_count as usize,
         };
 
         state.mesh_batch.resize(ctx, objects_count as usize);
 
         Ok(state)
+    }
+
+    fn spawn(&mut self, x: f32, y: f32, ctx: &mut ggez::Context) {
+        let new_obj = Object::spawn(x, y, &mut self.rng);
+
+        self.objects.push(new_obj);
+        self.objects_count = self.objects.len() as usize;
+        self.mesh_batch.resize(ctx, self.objects_count);
     }
 }
 
@@ -139,7 +149,23 @@ impl EventHandler for MainState {
         Ok(())
     }
 
+    fn mouse_button_down_event(
+        &mut self,
+        ctx: &mut ggez::Context,
+        _button: event::MouseButton,
+        x: f32,
+        y: f32,
+    ) -> Result<(), ggez::GameError> {
+        self.spawn(x, y, ctx);
+
+        Ok(())
+    }
+
     fn update(&mut self, ctx: &mut ggez::Context) -> Result<(), ggez::GameError> {
+        if ctx.time.fps() > 30.0 {
+            self.spawn(self.canvas_width / 2.0, self.canvas_height / 2.0, ctx);
+        }
+
         for obj in self.objects.iter_mut() {
             if self.rng.gen() && self.rng.gen() {
                 obj.random_move(&mut self.rng);
@@ -165,9 +191,13 @@ impl EventHandler for MainState {
 
         canvas.draw(
             &graphics::Text::new(
-                TextFragment::new(format!("FPS: {}", &ctx.time.fps()))
-                    .color(Color::BLACK)
-                    .scale(PxScale::from(50.0)),
+                TextFragment::new(format!(
+                    "FPS: {} \nObjects: {}",
+                    &ctx.time.fps(),
+                    self.objects_count
+                ))
+                .color(Color::BLACK)
+                .scale(PxScale::from(50.0)),
             ),
             graphics::DrawParam::new().dest(Vec2::new(0.0, 0.0)),
         );
@@ -187,7 +217,7 @@ fn main() {
     );
     let (ctx, event_loop) = context_builder.build().unwrap();
 
-    let objects_count = 50000;
+    let objects_count = 100;
     let state = MainState::new(&ctx, width, height, objects_count).unwrap();
     event::run(ctx, event_loop, state)
 }
