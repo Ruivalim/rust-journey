@@ -225,7 +225,7 @@ impl Physics {
                         Color::RED,
                     )
                     .expect("Failed to create ball gizmo"),
-                    DrawParam::default().rotation(rotation),
+                    DrawParam::default(),
                 ));
             } else if let Some(cuboid) = shape.as_cuboid() {
                 let half_extents = cuboid.half_extents;

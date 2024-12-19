@@ -117,7 +117,7 @@ impl MainState {
 
         let gui = Gui::new(ctx);
 
-        let mut player = Player::new(ctx, Rc::clone(&physics));
+        let mut player = Player::new(ctx, Rc::clone(&physics), 40.0, 40.0, 40.0, 1000.0);
 
         player.move_to(
             canvas_width / 2.0,
@@ -198,6 +198,8 @@ impl EventHandler for MainState {
             _ => {}
         }
 
+        self.player.player_movement(input.keycode.unwrap());
+
         Ok(())
     }
 
@@ -275,6 +277,8 @@ impl EventHandler for MainState {
         if self.is_paused {
             return Ok(());
         }
+
+        self.player.update();
         self.physics.borrow_mut().step();
 
         Ok(())
@@ -303,11 +307,10 @@ impl EventHandler for MainState {
             );
         }
 
-        let player_body =
-            physics.rigid_body_set[self.player.player_cuboid.body_handle].translation();
-        let rotation = physics.rigid_body_set[self.player.player_cuboid.body_handle].rotation();
+        let player_body = physics.rigid_body_set[self.player.player_body.body_handle].translation();
+        let rotation = physics.rigid_body_set[self.player.player_body.body_handle].rotation();
         canvas.draw(
-            &self.player.player_cuboid.mesh,
+            &self.player.player_body.mesh,
             DrawParam::default()
                 .dest(Vec2::new(player_body.x, player_body.y))
                 .rotation(rotation.angle()),
