@@ -1,9 +1,9 @@
 use ggez::{
     glam::Vec2,
     graphics::{Color, DrawMode, Mesh, Rect},
-    GameError,
 };
 
+use nalgebra::Point2;
 use rapier2d::prelude::*;
 
 pub struct Physics {
@@ -21,6 +21,22 @@ pub struct Physics {
     impulse_joint_set: ImpulseJointSet,
     multibody_joint_set: MultibodyJointSet,
     query_pipeline: QueryPipeline,
+}
+
+pub struct Ball {
+    pub mesh: Mesh,
+    pub body_handle: RigidBodyHandle,
+    pub collider_handle: ColliderHandle,
+    pub position_initial: Vec2,
+    pub size: Vec2,
+}
+
+pub struct Cuboid {
+    pub mesh: Mesh,
+    pub body_handle: RigidBodyHandle,
+    pub collider_handle: ColliderHandle,
+    pub position_initial: Vec2,
+    pub size: Vec2,
 }
 
 impl Physics {
@@ -76,27 +92,37 @@ impl Physics {
     pub fn new_ball(
         &mut self,
         ctx: &ggez::Context,
+        identifier: u128,
         ball_init_x: f32,
         ball_init_y: f32,
         ball_radius: f32,
         color: Color,
         restitution: f32,
         fixed: bool,
-    ) -> (Mesh, RigidBodyHandle) {
-        let ball_body = if fixed {
+    ) -> Ball {
+        let mut ball_body = if fixed {
             RigidBodyBuilder::fixed()
         } else {
             RigidBodyBuilder::dynamic()
         }
         .position(Isometry::translation(ball_init_x, ball_init_y))
         .build();
+
+        ball_body.user_data = identifier;
+
         let ball_handle: RigidBodyHandle = self.rigid_body_set.insert(ball_body);
 
-        let ball_collider = ColliderBuilder::ball(ball_radius)
+        let mut ball_collider = ColliderBuilder::ball(ball_radius)
             .restitution(restitution)
             .build();
-        self.collider_set
-            .insert_with_parent(ball_collider, ball_handle, &mut self.rigid_body_set);
+
+        ball_collider.user_data = identifier;
+
+        let ball_collider_handle = self.collider_set.insert_with_parent(
+            ball_collider,
+            ball_handle,
+            &mut self.rigid_body_set,
+        );
 
         let mesh = Mesh::new_circle(
             ctx,
@@ -108,12 +134,19 @@ impl Physics {
         )
         .unwrap();
 
-        return (mesh, ball_handle);
+        return Ball {
+            mesh,
+            body_handle: ball_handle,
+            collider_handle: ball_collider_handle,
+            position_initial: Vec2::new(ball_init_x, ball_init_y),
+            size: Vec2::new(ball_radius * 2.0, ball_radius * 2.0),
+        };
     }
 
     pub fn new_cuboid(
         &mut self,
         ctx: &ggez::Context,
+        identifier: u128,
         cuboid_width: f32,
         cuboid_height: f32,
         cuboid_x: f32,
@@ -121,8 +154,8 @@ impl Physics {
         color: Color,
         restitution: f32,
         fixed: bool,
-    ) -> (Mesh, RigidBodyHandle, Vec2) {
-        let cuboid_body = if fixed {
+    ) -> Cuboid {
+        let mut cuboid_body = if fixed {
             RigidBodyBuilder::fixed()
         } else {
             RigidBodyBuilder::dynamic()
@@ -133,12 +166,16 @@ impl Physics {
         ))
         .build();
 
+        cuboid_body.user_data = identifier;
         let cuboid_handle: RigidBodyHandle = self.rigid_body_set.insert(cuboid_body);
 
-        let cuboid_collider = ColliderBuilder::cuboid(cuboid_width / 2.0, cuboid_height / 2.0)
+        let mut cuboid_collider = ColliderBuilder::cuboid(cuboid_width / 2.0, cuboid_height / 2.0)
             .restitution(restitution)
             .build();
-        self.collider_set.insert_with_parent(
+
+        cuboid_collider.user_data = identifier;
+
+        let cuboid_collider_handle = self.collider_set.insert_with_parent(
             cuboid_collider,
             cuboid_handle,
             &mut self.rigid_body_set,
@@ -152,7 +189,13 @@ impl Physics {
         )
         .unwrap();
 
-        return (mesh, cuboid_handle, Vec2::new(cuboid_x, cuboid_y));
+        return Cuboid {
+            mesh,
+            body_handle: cuboid_handle,
+            collider_handle: cuboid_collider_handle,
+            position_initial: Vec2::new(cuboid_x, cuboid_y),
+            size: Vec2::new(cuboid_width, cuboid_height),
+        };
     }
 
     pub fn render_gizmos(&self, ctx: &ggez::Context) -> Vec<Mesh> {
@@ -198,4 +241,49 @@ impl Physics {
 
         gizmos
     }
+
+    pub fn apply_impulse(&mut self, body_handle: RigidBodyHandle, force: Vector<f32>) {
+        if let Some(body) = self.rigid_body_set.get_mut(body_handle) {
+            body.apply_impulse(force, true);
+        }
+    }
+
+    pub fn query_point(&self, point: Vector<f32>) -> Vec<ColliderHandle> {
+        let mut colliders = Vec::new();
+        let query_filter = QueryFilter::default();
+
+        self.query_pipeline.intersections_with_point(
+            &self.rigid_body_set,
+            &self.collider_set,
+            &Point2::new(point.x, point.y),
+            query_filter,
+            &mut |collider_handle| {
+                colliders.push(collider_handle);
+                true
+            },
+        );
+
+        colliders
+    }
+}
+
+pub fn string_to_u128(input: &str) -> u128 {
+    let mut bytes = [0u8; 16];
+    let input_bytes = input.as_bytes();
+    if input_bytes.len() > 16 {
+        panic!("String is too long to fit in a u128");
+    }
+
+    bytes[..input_bytes.len()].copy_from_slice(input_bytes);
+
+    u128::from_be_bytes(bytes)
+}
+
+pub fn u128_to_string(value: u128) -> String {
+    let bytes = value.to_be_bytes();
+
+    let mut bytes = bytes.to_vec();
+    bytes.retain(|&x| x != 0);
+
+    String::from_utf8(bytes.to_vec()).expect("Failed to convert bytes back to a valid UTF-8 string")
 }
