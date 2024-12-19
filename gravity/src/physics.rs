@@ -1,6 +1,6 @@
 use ggez::{
     glam::Vec2,
-    graphics::{Color, DrawMode, Mesh, Rect},
+    graphics::{Color, DrawMode, DrawParam, Mesh, Rect},
 };
 
 use nalgebra::Point2;
@@ -184,7 +184,12 @@ impl Physics {
         let mesh = Mesh::new_rectangle(
             ctx,
             DrawMode::fill(),
-            Rect::new(0.0, 0.0, cuboid_width, cuboid_height),
+            ggez::graphics::Rect::new(
+                -cuboid_width / 2.0,
+                -cuboid_height / 2.0,
+                cuboid_width,
+                cuboid_height,
+            ),
             color,
         )
         .unwrap();
@@ -198,18 +203,19 @@ impl Physics {
         };
     }
 
-    pub fn render_gizmos(&self, ctx: &ggez::Context) -> Vec<Mesh> {
+    pub fn render_gizmos(&self, ctx: &ggez::Context) -> Vec<(Mesh, DrawParam)> {
         let mut gizmos = Vec::new();
 
         for collider in self.collider_set.iter() {
             let collider = collider.1;
 
             let position = collider.position();
+            let rotation = position.rotation.angle();
             let translation = position.translation;
             let shape = collider.shape();
 
             if let Some(ball) = shape.as_ball() {
-                gizmos.push(
+                gizmos.push((
                     Mesh::new_circle(
                         ctx,
                         DrawMode::stroke(1.0),
@@ -219,23 +225,30 @@ impl Physics {
                         Color::RED,
                     )
                     .expect("Failed to create ball gizmo"),
-                );
+                    DrawParam::default().rotation(rotation),
+                ));
             } else if let Some(cuboid) = shape.as_cuboid() {
                 let half_extents = cuboid.half_extents;
-                gizmos.push(
-                    Mesh::new_rectangle(
-                        ctx,
-                        DrawMode::stroke(1.0),
-                        Rect::new(
-                            translation.x - half_extents.x,
-                            translation.y - half_extents.y,
-                            half_extents.x * 2.0,
-                            half_extents.y * 2.0,
-                        ),
-                        Color::RED,
-                    )
-                    .expect("Failed to create cuboid gizmo"),
+                let position = collider.position();
+                let rotation = position.rotation.angle();
+
+                let w = 2.0 * half_extents.x;
+                let h = 2.0 * half_extents.y;
+
+                let mesh = Mesh::new_rectangle(
+                    ctx,
+                    DrawMode::stroke(1.0),
+                    Rect::new(-half_extents.x, -half_extents.y, w, h),
+                    Color::RED,
                 )
+                .expect("Failed to create cuboid gizmo");
+
+                gizmos.push((
+                    mesh,
+                    DrawParam::default()
+                        .dest(Vec2::new(translation.x, translation.y))
+                        .rotation(rotation),
+                ));
             }
         }
 
@@ -264,6 +277,35 @@ impl Physics {
         );
 
         colliders
+    }
+
+    pub fn apply_impulse_to_coordenates(
+        &mut self,
+        x: f32,
+        y: f32,
+        collider_handle: ColliderHandle,
+    ) {
+        let body_handle = self.collider_set[collider_handle].parent().unwrap();
+        let body = self.rigid_body_set.get_mut(body_handle).unwrap();
+
+        let current_pos = body.position().translation.vector;
+        let target_pos = Vector::new(x, y);
+        let delta_pos = target_pos - current_pos;
+
+        let acceleration = delta_pos * 0.1;
+
+        let mass = body.mass();
+
+        let force = mass * acceleration;
+
+        body.apply_impulse(force, true);
+    }
+
+    pub fn move_to(&mut self, x: f32, y: f32, collider_handle: ColliderHandle) {
+        let body_handle = self.collider_set[collider_handle].parent().unwrap();
+        let body = self.rigid_body_set.get_mut(body_handle).unwrap();
+
+        body.set_position(Isometry::translation(x, y), true);
     }
 }
 
