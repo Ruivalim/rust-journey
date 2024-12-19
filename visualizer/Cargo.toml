@@ -1,0 +1,8 @@
+[package]
+name = "visualizer"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ggez = "0.9.3"
+rodio = "0.20.1"
