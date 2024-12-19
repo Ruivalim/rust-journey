@@ -8,11 +8,11 @@ use ggez::{
     conf::WindowMode,
     event::{self, EventHandler},
     glam::Vec2,
-    graphics::{self, Canvas, Color, DrawParam, Drawable, Mesh},
+    graphics::{self, Canvas, Color, DrawParam},
     GameResult,
 };
 use physics::{string_to_u128, u128_to_string};
-use rand::{random, rngs::ThreadRng, thread_rng, Rng};
+use rand::{random, rngs::ThreadRng, thread_rng};
 use rapier2d::prelude::*;
 
 struct MainState {
@@ -22,11 +22,14 @@ struct MainState {
     gui: Gui,
     rng: ThreadRng,
     open_ui: bool,
+    is_mouse_left_down: bool,
+    last_clicked_collider: Option<ColliderHandle>,
 }
 
 impl MainState {
     fn new(ctx: &ggez::Context, canvas_width: f32, canvas_height: f32) -> GameResult<MainState> {
         let mut physics = physics::Physics::new(Vector::new(0.0, 98.1));
+        physics.integration_parameters.max_ccd_substeps = 10;
 
         let flor_width = canvas_width;
         let flor_height = 100.0;
@@ -108,6 +111,8 @@ impl MainState {
             gui,
             rng: thread_rng(),
             open_ui: true,
+            is_mouse_left_down: false,
+            last_clicked_collider: None,
         })
     }
 
@@ -126,13 +131,27 @@ impl EventHandler for MainState {
         _x: f32,
         _y: f32,
     ) -> Result<(), ggez::GameError> {
+        self.is_mouse_left_down = true;
         let query = self.physics.query_point(Vector::new(_x, _y));
         for collider_handle in query {
+            self.last_clicked_collider = Some(collider_handle);
             let body_handle = self.physics.collider_set[collider_handle].parent().unwrap();
             let user_data = self.physics.rigid_body_set[body_handle].user_data;
             println!("User data: {:?}", u128_to_string(user_data));
         }
 
+        Ok(())
+    }
+
+    fn mouse_button_up_event(
+        &mut self,
+        _ctx: &mut ggez::Context,
+        _button: event::MouseButton,
+        _x: f32,
+        _y: f32,
+    ) -> Result<(), ggez::GameError> {
+        self.is_mouse_left_down = false;
+        self.last_clicked_collider = None;
         Ok(())
     }
 
@@ -144,6 +163,30 @@ impl EventHandler for MainState {
     ) -> Result<(), ggez::GameError> {
         if input.keycode == Some(ggez::input::keyboard::KeyCode::Space) {
             self.open_ui = !self.open_ui;
+        }
+        Ok(())
+    }
+
+    fn mouse_motion_event(
+        &mut self,
+        _ctx: &mut ggez::Context,
+        x: f32,
+        y: f32,
+        _dx: f32,
+        _dy: f32,
+    ) -> Result<(), ggez::GameError> {
+        if self.is_mouse_left_down {
+            if let Some(collider_handle) = self.last_clicked_collider {
+                let body_handle = self.physics.collider_set[collider_handle].parent().unwrap();
+                let body = self.physics.rigid_body_set.get_mut(body_handle).unwrap();
+
+                let current_pos = body.position().translation.vector;
+                let target_pos = Vector::new(x, y);
+
+                let force = target_pos - current_pos;
+
+                body.apply_impulse(force * 150.0, true);
+            }
         }
         Ok(())
     }
@@ -195,13 +238,10 @@ impl EventHandler for MainState {
         let mut canvas = graphics::Canvas::from_frame(ctx, graphics::Color::CYAN);
 
         for floor in &self.floors {
-            canvas.draw(
-                &floor.mesh,
-                DrawParam::default().dest(Vec2::new(
-                    floor.position_initial.x,
-                    floor.position_initial.y,
-                )),
-            );
+            let floor_body = &self.physics.rigid_body_set[floor.body_handle].translation();
+            let x = floor_body.x - floor.size.x / 2.0;
+            let y = floor_body.y - floor.size.y / 2.0;
+            canvas.draw(&floor.mesh, DrawParam::default().dest(Vec2::new(x, y)));
         }
 
         for ball in &self.balls {
