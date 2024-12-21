@@ -1,0 +1,10 @@
+[package]
+name = "bevy_learning"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bevy = "0.15.0"
+bevy_fps_controller = "0.15.0"
+rand = "0.8.5"
+rand_chacha = "0.3.1"
