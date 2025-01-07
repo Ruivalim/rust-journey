@@ -165,6 +165,7 @@ name = "animation"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "bevy_ecs_tilemap",
  "rand",
  "rand_chacha",
 ]
@@ -566,6 +567,17 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "bevy_ecs_tilemap"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6d860132718d33627950294b0f316310f1dae789fb995deb4516ebdd7f3e6219"
+dependencies = [
+ "bevy",
+ "bevy_internal",
+ "log",
 ]
 
 [[package]]

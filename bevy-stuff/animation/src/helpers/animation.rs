@@ -46,7 +46,7 @@ pub struct AnimationConfig {
     pub current_animation_last_sprite_index: usize,
     pub current_animation_flip_x: bool,
     pub current_animation_flip_y: bool,
-    current_animation_name: String,
+    pub current_animation_name: String,
     animations: Vec<AnimationState>,
     pub fps: u8,
     pub frame_timer: Timer,
