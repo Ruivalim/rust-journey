@@ -1,0 +1,9 @@
+[package]
+name = "genetic_algo_1"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bevy = "0.15.1"
+rand = "0.8.5"
+rand_chacha = "0.3.1"
