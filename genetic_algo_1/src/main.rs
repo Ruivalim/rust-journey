@@ -83,6 +83,8 @@ fn setup(
                 family_color,
                 action: common::Action::RandomMovement,
                 action_timer: Timer::from_seconds(seeded_rng.gen_range(1.0..10.0), TimerMode::Once),
+                vision_angle: 90.0,
+                rotation: 0.0,
             },
         ));
     }

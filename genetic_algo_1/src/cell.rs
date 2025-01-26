@@ -20,18 +20,19 @@ pub fn cell_plugin(app: &mut App) {
     )
     .add_systems(FixedUpdate, decide_action);
 }
-
 fn move_cells(
-    mut cell_query: Query<
-        (&mut Transform, &mut common::Cell),
-        (Without<common::Food>, With<common::Cell>),
-    >,
+    mut cell_query: Query<(&mut Transform, &mut common::Cell)>,
     time: Res<Time>,
     game_config: Res<common::GameConfig>,
 ) {
     for (mut transform, mut cell) in cell_query.iter_mut() {
         if let Some(target) = cell.target_location {
             let direction = (target - transform.translation.truncate()).normalize();
+            let rotation =
+                Quat::from_rotation_arc(Vec3::Y, Vec3::new(direction.x, direction.y, 0.0));
+
+            transform.rotation = rotation;
+
             let dx = direction.x * cell.movement_speed * time.delta_secs();
             let dy = direction.y * cell.movement_speed * time.delta_secs();
             let nx = (transform.translation.x + dx)
@@ -45,6 +46,7 @@ fn move_cells(
             transform.translation.y = ny;
             cell.pos_y = ny;
             cell.health -= game_config.movement_cost;
+            cell.rotation = rotation.to_euler(EulerRot::XYZ).2
         }
     }
 }
@@ -130,6 +132,8 @@ fn cell_reproduction(
                     ),
                     action: common::Action::RandomMovement,
                     action_timer: Timer::from_seconds(rng.gen_range(5.0..10.0), TimerMode::Once),
+                    vision_angle: 90.0,
+                    rotation: 0.0,
                 };
 
                 commands.spawn((
@@ -167,6 +171,22 @@ fn draw_gismos(selected_cell: Res<common::CellSelected>, mut gizmos: Gizmos) {
         gizmos.circle_2d(
             Vec2::new(cell.pos_x, cell.pos_y),
             cell.vision_range,
+            Color::linear_rgb(1.0, 0.0, 0.0),
+        );
+
+        let forward = Vec2::new(0.0, 1.0).rotate(Vec2::from_angle(cell.rotation));
+        let half_angle = cell.vision_angle.to_radians() / 2.0;
+        let left = forward.rotate(Vec2::from_angle(-half_angle));
+        let right = forward.rotate(Vec2::from_angle(half_angle));
+
+        gizmos.line_2d(
+            Vec2::new(cell.pos_x, cell.pos_y),
+            Vec2::new(cell.pos_x, cell.pos_y) + left * cell.vision_range,
+            Color::linear_rgb(1.0, 0.0, 0.0),
+        );
+        gizmos.line_2d(
+            Vec2::new(cell.pos_x, cell.pos_y),
+            Vec2::new(cell.pos_x, cell.pos_y) + right * cell.vision_range,
             Color::linear_rgb(1.0, 0.0, 0.0),
         );
 
@@ -209,6 +229,7 @@ fn decide_action(
         }
     }
 }
+
 fn execute_action(
     mut cell_query: Query<(&mut common::Cell, &Transform)>,
     food_query: Query<&Transform, With<common::Food>>,
@@ -236,18 +257,19 @@ fn execute_action(
             common::Action::FindFood => {
                 let mut found_food = false;
                 for food_transform in food_query.iter() {
-                    let distance = transform
-                        .translation
-                        .truncate()
-                        .distance(food_transform.translation.truncate());
-                    if distance <= cell.vision_range {
+                    if is_within_vision_cone(
+                        transform,
+                        food_transform.translation.truncate(),
+                        cell.vision_range,
+                        cell.vision_angle,
+                    ) {
                         cell.target_location = Some(food_transform.translation.truncate());
                         found_food = true;
                         break;
                     }
                 }
-                if found_food == false {
-                    cell.action = common::Action::RandomMovement
+                if !found_food {
+                    cell.action = common::Action::RandomMovement;
                 }
             }
             common::Action::Reproduce => {
@@ -269,4 +291,29 @@ fn execute_action(
             }
         }
     }
+}
+
+fn is_within_vision_cone(
+    cell_transform: &Transform,
+    target_position: Vec2,
+    vision_range: f32,
+    vision_angle: f32,
+) -> bool {
+    let direction_to_target = (target_position - cell_transform.translation.truncate()).normalize();
+    let cell_forward = Vec2::new(0.0, 1.0).rotate(Vec2::from_angle(
+        cell_transform.rotation.to_euler(EulerRot::XYZ).2,
+    ));
+
+    // Check if the target is within the vision range
+    let distance = cell_transform
+        .translation
+        .truncate()
+        .distance(target_position);
+    if distance > vision_range {
+        return false;
+    }
+
+    // Check if the target is within the vision cone
+    let angle_to_target = cell_forward.angle_between(direction_to_target).to_degrees();
+    angle_to_target.abs() <= vision_angle / 2.0
 }

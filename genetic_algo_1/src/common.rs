@@ -28,6 +28,8 @@ pub struct Cell {
     pub family_color: Color,
     pub action: Action,
     pub action_timer: Timer,
+    pub vision_angle: f32,
+    pub rotation: f32,
 }
 
 #[derive(Resource, Default)]
