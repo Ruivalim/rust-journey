@@ -1,5 +1,3 @@
-use std::process::id;
-
 use bevy::{
     color::palettes::css::{GREEN, RED},
     input::common_conditions::input_pressed,
@@ -67,6 +65,7 @@ fn main() {
                 mouse_coordinates_system,
                 get_cell_info.run_if(input_pressed(MouseButton::Left)),
                 update_cell_info,
+                cells_eat,
             ),
         )
         .run();
@@ -161,7 +160,7 @@ fn move_cells(
             let dx = direction.x * cell.movement_speed * time.delta_secs();
             let dy = direction.y * cell.movement_speed * time.delta_secs();
             let nx = (transform.translation.x + dx).clamp(-MAP_WIDTH / 2., MAP_WIDTH / 2.);
-            let ny = (transform.translation.x + dy).clamp(-MAP_WIDTH / 2., MAP_WIDTH / 2.);
+            let ny = (transform.translation.y + dy).clamp(-MAP_WIDTH / 2., MAP_WIDTH / 2.);
 
             transform.translation.x = nx;
             cell.pos_x = nx;
@@ -268,5 +267,21 @@ fn update_cell_info(mut selected_cell: ResMut<CellSelected>, queries: Query<(&Ce
         }
 
         selected_cell.0 = Some(cell_selected[0].clone());
+    }
+}
+
+fn cells_eat(
+    mut commands: Commands,
+    mut cells_query: Query<(&mut Cell, &Transform), (With<Cell>, Without<Food>)>,
+    foods_query: Query<(&Food, &Transform, Entity), (Without<Cell>, With<Food>)>,
+) {
+    for mut cell in cells_query.iter_mut() {
+        for foods in foods_query.iter() {
+            let distance = cell.1.translation.distance(foods.1.translation);
+            if distance < 1.0 {
+                cell.0.health += 15.0;
+                commands.entity(foods.2).despawn();
+            }
+        }
     }
 }
