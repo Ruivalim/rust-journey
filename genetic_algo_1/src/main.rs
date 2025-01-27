@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 use bevy_egui::EguiPlugin;
+use cell::Action;
 use common::CellSelected;
 use rand::SeedableRng;
 use rand_chacha::ChaCha12Rng;
@@ -12,10 +13,13 @@ mod ui;
 
 fn main() {
     let game_config = common::GameConfig {
-        movement_cost: 0.05,
+        movement_cost: 0.01,
+        hunger_over_time: 0.01,
         map_height: 3000.0,
         map_width: 3000.0,
         food_spawn_rate: 0.5,
+        life_lost_on_hungry: 0.05,
+        current_generation: 1,
     };
 
     App::new()
@@ -89,30 +93,75 @@ fn game_tick(
     mut gizmos: Gizmos,
 ) {
     for (mut cell_transform, mut cell, entity) in cell_query.iter_mut() {
-        // AI stuff
-        // For now only random movement
-        if cell.target_location.is_none()
-            || cell_transform
-                .translation
-                .truncate()
-                .distance(cell.target_location.unwrap())
-                < 1.0
-        {
-            cell.random_target(&mut seeded_rng.0, &game_config);
+        let mut reward = 0.0;
+        if cell.health <= 0.0 {
+            reward -= 20.0;
+            cell.fitness += reward;
+            continue;
+        }
+        cell.process_brain(
+            &mut cell_transform,
+            &mut food_query,
+            &mut seeded_rng.0,
+            &game_config,
+        );
+
+        reward += 1.0;
+
+        match cell.action {
+            Action::Chilling => {
+                cell.target_location = None;
+                cell.energy =
+                    (cell.energy + if cell.energy < 30.0 { 1.5 } else { 0.5 }).clamp(0.0, 100.0);
+                if cell.hunger < 50.0 && cell.health < 100.0 {
+                    cell.health = (cell.health + 0.1).clamp(0.0, 100.0);
+                }
+            }
+            Action::GoingForFood => {
+                let mut food_found = false;
+
+                for (food_transform, _, _) in food_query.iter_mut() {
+                    let food_position = food_transform.translation.truncate();
+                    if is_within_vision_cone(
+                        &cell_transform,
+                        food_position,
+                        cell.vision_range,
+                        cell.vision_angle,
+                    ) {
+                        reward += 10.0;
+                        cell.target_location = Some(food_position);
+                        food_found = true;
+                        break;
+                    }
+                }
+
+                if !food_found {
+                    if cell.target_location.is_none()
+                        || cell_transform
+                            .translation
+                            .truncate()
+                            .distance(cell.target_location.unwrap())
+                            < 1.0
+                    {
+                        cell.random_target(&mut seeded_rng.0, &game_config);
+                    }
+                }
+            }
+            Action::MovingAround => {
+                if cell.target_location.is_none()
+                    || cell_transform
+                        .translation
+                        .truncate()
+                        .distance(cell.target_location.unwrap())
+                        < 1.0
+                {
+                    cell.random_target(&mut seeded_rng.0, &game_config);
+                }
+            }
         }
 
-        // If theres food will get it
-        for (food_transform, _, _) in food_query.iter_mut() {
-            let food_position = food_transform.translation.truncate();
-            if is_within_vision_cone(
-                &cell_transform,
-                food_position,
-                cell.vision_range,
-                cell.vision_angle,
-            ) {
-                cell.action = cell::Action::GoingForFood;
-                cell.target_location = Some(food_position);
-            }
+        if cell.hunger >= 100.0 {
+            reward -= 5.0;
         }
 
         // Fixed stuff
@@ -121,8 +170,8 @@ fn game_tick(
                 .translation
                 .distance(food_transform.translation);
             if distance < 1.0 {
-                cell.health += 15.0;
-                cell.energy += 15.0;
+                cell.energy = (cell.energy + 15.0).clamp(0.0, 100.0);
+                cell.hunger = (cell.hunger - 15.0).clamp(0.0, 100.0);
                 commands.entity(food_entity).despawn();
             }
         }
@@ -134,14 +183,7 @@ fn game_tick(
         }
 
         cell.movement(&mut cell_transform, &game_config, time.delta_secs());
-
-        if cell.energy <= 1.0 {
-            cell.health -= 1.0;
-        }
-
-        if cell.health <= 0.0 {
-            commands.entity(entity).despawn();
-        }
+        cell.fitness += reward;
     }
 }
 
@@ -167,49 +209,3 @@ fn is_within_vision_cone(
     let angle_to_target = cell_forward.angle_to(direction_to_target).to_degrees();
     angle_to_target.abs() <= vision_angle / 2.0
 }
-
-// fn check_collisions(
-//     query: Query<(Entity, &Transform, &Mesh2d), With<common::Collider>>,
-//     meshes: Res<Assets<Mesh>>,
-// ) {
-//     let mut colliders = query.iter_combinations();
-
-//     while let Some([(entity_a, transform_a, mesh_a), (entity_b, transform_b, mesh_b)]) =
-//         colliders.fetch_next()
-//     {
-//         let size_a = get_mesh_size(mesh_a, &meshes);
-//         let size_b = get_mesh_size(mesh_b, &meshes);
-
-//         if let (Some(size_a), Some(size_b)) = (size_a, size_b) {
-//             if aabb_collision(
-//                 transform_a.translation.truncate(),
-//                 size_a,
-//                 transform_b.translation.truncate(),
-//                 size_b,
-//             ) {
-
-//             }
-//         }
-//     }
-// }
-
-// fn get_mesh_size(mesh_handle: &Mesh2d, meshes: &Assets<Mesh>) -> Option<Vec2> {
-//     meshes.get(&mesh_handle.0).map(|mesh| {
-//         let aabb = mesh.compute_aabb().unwrap();
-//         let size = aabb.half_extents * 2.0;
-//         Vec2::new(size.x, size.y)
-//     })
-// }
-
-// fn aabb_collision(pos1: Vec2, size1: Vec2, pos2: Vec2, size2: Vec2) -> bool {
-//     let half_size1 = size1 / 2.0;
-//     let half_size2 = size2 / 2.0;
-
-//     let min1 = pos1 - half_size1;
-//     let max1 = pos1 + half_size1;
-
-//     let min2 = pos2 - half_size2;
-//     let max2 = pos2 + half_size2;
-
-//     !(min1.x > max2.x || max1.x < min2.x || min1.y > max2.y || max1.y < min2.y)
-// }

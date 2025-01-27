@@ -19,12 +19,24 @@ pub fn ui_system(
     egui::Window::new("Game Options").show(contexts.ctx_mut(), |ui| {
         ui.label(format!("Foods: {}", query_foods.iter().count()));
         ui.label(format!("Cells alive: {}", query_cells.iter().count()));
+        ui.label(format!(
+            "Current Generation: {}",
+            game_options.current_generation
+        ));
         ui.add(
             egui::Slider::new(&mut game_options.movement_cost, 0.001..=1.0).text("Movement Cost"),
         );
         ui.add(
             egui::Slider::new(&mut game_options.food_spawn_rate, 0.0..=10.0)
                 .text("Food spawn Rate"),
+        );
+        ui.add(
+            egui::Slider::new(&mut game_options.hunger_over_time, 0.001..=1.0)
+                .text("Hunger Over Time"),
+        );
+        ui.add(
+            egui::Slider::new(&mut game_options.life_lost_on_hungry, 0.001..=1.0)
+                .text("Life lost on Hungry"),
         );
     });
 
@@ -41,6 +53,9 @@ pub fn ui_system(
             ui.label(format!("Speed: {}", cell.movement_speed));
             ui.label(format!("Vision: {:?}", cell.vision_range));
             ui.label(format!("Action: {:?}", cell.action));
+            ui.label(format!("Hunger: {:?}", cell.hunger));
+            ui.label(format!("Fitness: {:?}", cell.fitness));
+            ui.label(format!("From generation: {:?}", cell.generation_created));
         } else {
             ui.label("No cell selected");
         }

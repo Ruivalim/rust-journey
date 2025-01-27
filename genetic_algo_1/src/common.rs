@@ -13,6 +13,9 @@ pub struct GameConfig {
     pub map_height: f32,
     pub map_width: f32,
     pub food_spawn_rate: f32,
+    pub hunger_over_time: f32,
+    pub life_lost_on_hungry: f32,
+    pub current_generation: i32,
 }
 
 #[derive(Resource)]
