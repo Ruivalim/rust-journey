@@ -2,8 +2,11 @@ use bevy::{color::palettes::css::GREEN, prelude::*};
 use rand::Rng;
 use rand_chacha::ChaCha12Rng;
 
-#[derive(Component, Debug)]
-pub struct Food;
+#[derive(Component, Debug, Clone, Copy)]
+pub struct Food {
+    pub pos_x: f32,
+    pub pos_y: f32,
+}
 
 impl Food {
     pub fn new(
@@ -26,7 +29,7 @@ impl Food {
             MeshMaterial2d(materials.add(Color::from(GREEN))),
             Transform::default().with_translation(Vec3::new(x, y, 0.0)),
             crate::common::Collider,
-            Food,
+            Food { pos_x: x, pos_y: y },
         );
     }
 }

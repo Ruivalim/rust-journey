@@ -22,10 +22,10 @@ pub struct GameConfig {
     pub foods_per_day: i32,
     pub current_day: i32,
     pub day_speed: f32,
-    pub draw_gizmos: bool,
     pub mutation_rate: f32,
     pub show_fittest: bool,
     pub rewards: Rewards,
+    pub debug_logs: bool,
 }
 
 pub const REWARDS: Rewards = Rewards {
@@ -42,10 +42,10 @@ pub const GAME_CONFIG: GameConfig = GameConfig {
     foods_per_day: 1,
     current_day: 1,
     day_speed: 1.0,
-    draw_gizmos: false,
     mutation_rate: 0.1,
     show_fittest: false,
     rewards: REWARDS,
+    debug_logs: false,
 };
 
 #[derive(Component)]

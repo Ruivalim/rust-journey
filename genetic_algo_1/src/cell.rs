@@ -4,7 +4,8 @@ use rand::Rng;
 use rand_chacha::ChaCha12Rng;
 use uuid::Uuid;
 
-use crate::common::GameConfig;
+use crate::common::{self, GameConfig};
+use crate::food;
 use crate::helpers::neural_network::NeuralNetwork;
 
 #[derive(Clone, Debug, Copy, PartialEq)]
@@ -52,6 +53,8 @@ pub struct Cell {
     pub genes: Genes,
     pub mature: bool,
     pub is_moving: bool,
+    pub offsprings_count: i32,
+    pub reproduction_cooldown: f32,
 }
 
 #[allow(dead_code)]
@@ -117,20 +120,44 @@ impl Cell {
                 genes,
                 mature: false,
                 is_moving: false,
+                offsprings_count: 0,
+                reproduction_cooldown: 0.0,
             },
         );
     }
 
     pub fn random_target(&mut self, seeded_rng: &mut ChaCha12Rng, game_config: &GameConfig) {
-        self.target_location = Some(Vec2::new(
-            seeded_rng.gen_range(-game_config.map_width / 2.0..game_config.map_width / 2.0),
-            seeded_rng.gen_range(-game_config.map_height / 2.0..game_config.map_height / 2.0),
-        ));
+        let distance = seeded_rng.gen_range(0.0..self.genes.vision_range);
 
-        self.action = Action::MovingAround;
+        // Generate a random angle within the vision cone
+        let half_vision_angle = self.genes.vision_angle / 2.0;
+        let random_angle = seeded_rng
+            .gen_range(-half_vision_angle..half_vision_angle)
+            .to_radians();
+
+        let forward_vector = Vec2::new(0.0, 1.0).rotate(Vec2::from_angle(self.rotation));
+
+        let target_offset = forward_vector.rotate(Vec2::from_angle(random_angle)) * distance;
+        let target_position = Vec2::new(self.pos_x, self.pos_y) + target_offset;
+
+        let clamped_target_position = Vec2::new(
+            target_position
+                .x
+                .clamp(-game_config.map_width / 2.0, game_config.map_width / 2.0),
+            target_position
+                .y
+                .clamp(-game_config.map_height / 2.0, game_config.map_height / 2.0),
+        );
+
+        self.target_location = Some(clamped_target_position);
     }
 
-    pub fn draw_vision(&self, gizmos: &mut Gizmos) {
+    pub fn draw_vision(
+        &self,
+        gizmos: &mut Gizmos,
+        all_cells: &Vec<Cell>,
+        all_foods: &Vec<food::Food>,
+    ) {
         gizmos.circle_2d(
             Vec2::new(self.pos_x, self.pos_y),
             self.genes.vision_range,
@@ -156,28 +183,39 @@ impl Cell {
         if let Some(location) = self.target_location {
             gizmos.circle_2d(location, 1.0, Color::linear_rgb(1.0, 0.0, 0.0));
         }
-    }
 
-    pub fn draw_gizmos(&self, gizmos: &mut Gizmos) {
-        match self.action {
-            Action::Chilling => gizmos.circle_2d(Vec2::new(self.pos_x, self.pos_y), 10.0, BLUE),
-            Action::GoingForFood => gizmos.circle_2d(Vec2::new(self.pos_x, self.pos_y), 10.0, RED),
-            Action::MovingAround => {
-                gizmos.circle_2d(Vec2::new(self.pos_x, self.pos_y), 10.0, YELLOW)
+        for cell in all_cells {
+            let cell_position = Vec2::new(cell.pos_x, cell.pos_y);
+            if self.is_within_vision_cone(cell_position) {
+                gizmos.circle_2d(cell_position, 20.0, self.genes.color);
             }
-            Action::FindMate => gizmos.circle_2d(Vec2::new(self.pos_x, self.pos_y), 10.0, PURPLE),
-        };
+        }
+        for food in all_foods {
+            let food_position = Vec2::new(food.pos_x, food.pos_y);
+            if self.is_within_vision_cone(food_position) {
+                gizmos.circle_2d(food_position, 20.0, self.genes.color);
+            }
+        }
+
+        // match self.action {
+        //     Action::Chilling => gizmos.circle_2d(Vec2::new(self.pos_x, self.pos_y), 10.0, BLUE),
+        //     Action::GoingForFood => gizmos.circle_2d(Vec2::new(self.pos_x, self.pos_y), 10.0, RED),
+        //     Action::MovingAround => {
+        //         gizmos.circle_2d(Vec2::new(self.pos_x, self.pos_y), 10.0, YELLOW)
+        //     }
+        //     Action::FindMate => gizmos.circle_2d(Vec2::new(self.pos_x, self.pos_y), 10.0, PURPLE),
+        // };
     }
 
     pub fn movement(&mut self, transform: &mut Transform, game_config: &GameConfig, time: f32) {
         if let Some(target) = self.target_location {
             let mut movement_speed = self.genes.movement_speed;
-            if self.energy < 30.0 {
-                movement_speed *= 0.5;
-            }
-            if self.age < 80 {
-                movement_speed *= 0.8;
-            }
+            // if self.energy < 30.0 {
+            //     movement_speed *= 0.5;
+            // }
+            // if self.age < 80 {
+            //     movement_speed *= 0.8;
+            // }
             let direction = (target - transform.translation.truncate()).normalize();
             let rotation =
                 Quat::from_rotation_arc(Vec3::Y, Vec3::new(direction.x, direction.y, 0.0));
@@ -213,15 +251,46 @@ impl Cell {
         self.energy = (self.energy - self.genes.metabolism * time).clamp(0.0, 100.0);
     }
 
-    pub fn process_brain(&mut self, rng: &mut ChaCha12Rng) {
+    pub fn process_brain(
+        &mut self,
+        rng: &mut ChaCha12Rng,
+        all_cells: &Vec<Cell>,
+        all_foods: &Vec<food::Food>,
+        game_config: &common::GameConfig,
+        gizmos: &mut Gizmos,
+    ) {
         let hunger_score = (self.hunger / 100.0) * self.genes.hunger_weight;
-        let reproduction_score =
-            (self.genes.reproduction_urge / 100.0) * self.genes.reproduction_weight;
+        let reproduction_score = match self.genes.reproduction_urge {
+            urge if urge > 75.0 => {
+                if self.offsprings_count == 0 || self.offsprings_count == 1 {
+                    (urge / 100.0) * self.genes.reproduction_weight * 1.5
+                } else {
+                    (urge / 100.0) * self.genes.reproduction_weight
+                }
+            }
+            urge if urge > 40.0 => {
+                if self.offsprings_count == 0 {
+                    (urge / 100.0) * self.genes.reproduction_weight
+                } else if self.offsprings_count == 1 {
+                    (urge / 100.0) * self.genes.reproduction_weight * 0.8
+                } else {
+                    (urge / 100.0) * self.genes.reproduction_weight * 0.5
+                }
+            }
+            _ => {
+                if self.offsprings_count == 0 {
+                    (self.genes.reproduction_urge / 100.0) * self.genes.reproduction_weight * 0.5
+                } else {
+                    (self.genes.reproduction_urge / 100.0) * self.genes.reproduction_weight * 0.2
+                }
+            }
+        };
+
         let energy_score = (self.energy / 100.0) * self.genes.energy_weight;
         let low_energy = if self.energy < 30.0 { 1.0 } else { 0.0 };
         let high_hunger = if self.hunger > 70.0 { 1.0 } else { 0.0 };
         let is_healthy = if self.health > 70.0 { 1.0 } else { 0.0 };
-        let random_score = 0.2 * rng.gen_range(0.0..1.0);
+        let random_score = self.genes.random_weight * rng.gen_range(0.0..1.0);
 
         let inputs = ndarray::array![
             hunger_score,
@@ -279,12 +348,12 @@ impl Cell {
     }
 
     pub fn create_offspring(
+        &mut self,
         seeded_rng: &mut ChaCha12Rng,
         game_config: &GameConfig,
         meshes: &mut Assets<Mesh>,
         materials: &mut Assets<ColorMaterial>,
-        parent1: Cell,
-        parent2: Cell,
+        parent2: &Cell,
     ) -> (
         bevy::prelude::Mesh2d,
         bevy::prelude::MeshMaterial2d<ColorMaterial>,
@@ -292,104 +361,112 @@ impl Cell {
         crate::common::Collider,
         Cell,
     ) {
-        let mut offspring_network = NeuralNetwork::crossover(&parent1.brain, &parent2.brain);
+        self.reproduction_cooldown = 50.0;
+        self.action = Action::Chilling;
+        self.energy -= self.genes.birth_energy_loss;
+        self.offsprings_count += 1;
+        // parent2.reproduction_cooldown = 50.0;
+        // parent2.action = Action::Chilling;
+        // parent2.energy -= parent2.genes.birth_energy_loss;
+        // parent2.offsprings_count += 1;
+        let mut offspring_network = NeuralNetwork::crossover(&self.brain, &parent2.brain);
         Cell::mutate(&mut offspring_network, game_config);
 
         let width = blend(
-            parent1.genes.width,
+            self.genes.width,
             parent2.genes.width,
             seeded_rng,
             game_config.mutation_rate,
         );
         let height = blend(
-            parent1.genes.height,
+            self.genes.height,
             parent2.genes.height,
             seeded_rng,
             game_config.mutation_rate,
         );
         let movement_speed = blend(
-            parent1.genes.movement_speed,
+            self.genes.movement_speed,
             parent2.genes.movement_speed,
             seeded_rng,
             game_config.mutation_rate,
         );
         let vision_range = blend(
-            parent1.genes.vision_range,
+            self.genes.vision_range,
             parent2.genes.vision_range,
             seeded_rng,
             game_config.mutation_rate,
         );
         let vision_angle = blend(
-            parent1.genes.vision_angle,
+            self.genes.vision_angle,
             parent2.genes.vision_angle,
             seeded_rng,
             game_config.mutation_rate,
         );
         let reproduction_urge = blend(
-            parent1.genes.reproduction_urge,
+            self.genes.reproduction_urge,
             parent2.genes.reproduction_urge,
             seeded_rng,
             game_config.mutation_rate,
         );
         let birth_energy_loss = blend(
-            parent1.genes.birth_energy_loss,
+            self.genes.birth_energy_loss,
             parent2.genes.birth_energy_loss,
             seeded_rng,
             game_config.mutation_rate,
         );
         let mature_age = blend(
-            parent1.genes.mature_age as f32,
+            self.genes.mature_age as f32,
             parent2.genes.mature_age as f32,
             seeded_rng,
             game_config.mutation_rate,
         ) as i32;
         let metabolism = blend(
-            parent1.genes.metabolism,
+            self.genes.metabolism,
             parent2.genes.metabolism,
             seeded_rng,
             game_config.mutation_rate,
         );
         let color = blend_colors(
-            parent1.genes.color.to_linear(),
+            self.genes.color.to_linear(),
             parent2.genes.color.to_linear(),
             seeded_rng,
         );
         let hunger_weight = blend(
-            parent1.genes.hunger_weight,
+            self.genes.hunger_weight,
             parent2.genes.hunger_weight,
             seeded_rng,
             game_config.mutation_rate,
         )
         .clamp(0.0, 2.0);
         let reproduction_weight = blend(
-            parent1.genes.reproduction_weight,
+            self.genes.reproduction_weight,
             parent2.genes.reproduction_weight,
             seeded_rng,
             game_config.mutation_rate,
         )
         .clamp(0.0, 2.0);
         let energy_weight = blend(
-            parent1.genes.energy_weight,
+            self.genes.energy_weight,
             parent2.genes.energy_weight,
             seeded_rng,
             game_config.mutation_rate,
         )
         .clamp(0.0, 2.0);
         let random_weight = blend(
-            parent1.genes.random_weight,
+            self.genes.random_weight,
             parent2.genes.random_weight,
             seeded_rng,
             game_config.mutation_rate,
         )
         .clamp(0.0, 2.0);
-        let mut highest_generation = parent1.generation;
+        let mut highest_generation = self.generation;
 
         if parent2.generation > highest_generation {
             highest_generation = parent2.generation;
         }
 
-        let x = parent1.pos_x;
-        let y = parent1.pos_y;
+        let x = self.pos_x;
+        let y = self.pos_y;
 
         let genes = Genes {
             movement_speed,
@@ -430,6 +507,8 @@ impl Cell {
                 genes,
                 mature: false,
                 is_moving: false,
+                offsprings_count: 0,
+                reproduction_cooldown: 0.0,
             },
         );
     }
@@ -437,6 +516,29 @@ impl Cell {
     pub fn rest(&mut self) {
         self.target_location = None;
         self.energy = (self.energy + if self.energy < 30.0 { 1.5 } else { 0.5 }).clamp(0.0, 100.0);
+    }
+
+    pub fn is_within_vision_cone(&self, target_position: Vec2) -> bool {
+        let cell_position = Vec2::new(self.pos_x, self.pos_y);
+
+        let distance = cell_position.distance(target_position);
+        if distance > self.genes.vision_range {
+            return false;
+        }
+
+        let cell_forward = Vec2::new(0.0, 1.0).rotate(Vec2::from_angle(self.rotation));
+
+        let to_target = (target_position - cell_position).normalize();
+
+        let angle_to_target = cell_forward.angle_to(to_target).to_degrees();
+
+        angle_to_target.abs() <= self.genes.vision_angle / 2.0
+    }
+
+    pub fn eat(&mut self, food: &food::Food) {
+        self.energy = (self.energy + 15.0).clamp(0.0, 100.0);
+        self.health = (self.energy + 15.0).clamp(0.0, 100.0);
+        self.hunger = (self.hunger - 15.0).clamp(0.0, 100.0);
     }
 
     pub fn mutate(network: &mut NeuralNetwork, game_config: &GameConfig) {
