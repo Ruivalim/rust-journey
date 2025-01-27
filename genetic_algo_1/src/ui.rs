@@ -33,7 +33,25 @@ pub fn mouse_coordinates_system(
     }
 }
 
-pub fn ui_system(mut contexts: EguiContexts, selected_cell: Res<common::CellSelected>) {
+pub fn ui_system(
+    mut contexts: EguiContexts,
+    selected_cell: Res<common::CellSelected>,
+    query_cells: Query<&common::Cell>,
+    query_foods: Query<&common::Food>,
+    mut game_options: ResMut<common::GameConfig>,
+) {
+    egui::Window::new("Game Options").show(contexts.ctx_mut(), |ui| {
+        ui.label(format!("Foods: {}", query_foods.iter().count()));
+        ui.label(format!("Cells alive: {}", query_cells.iter().count()));
+        ui.add(
+            egui::Slider::new(&mut game_options.movement_cost, 0.001..=1.0).text("Movement Cost"),
+        );
+        ui.add(
+            egui::Slider::new(&mut game_options.food_spawn_rate, 0.0..=10.0)
+                .text("Food spawn Rate"),
+        );
+    });
+
     egui::Window::new("Cell Viewer").show(contexts.ctx_mut(), |ui| {
         ui.separator();
         if let Some(cell) = &selected_cell.0 {
@@ -48,6 +66,7 @@ pub fn ui_system(mut contexts: EguiContexts, selected_cell: Res<common::CellSele
             ui.label(format!("Parent 2: {:?}", cell.parent_2));
             ui.label(format!("Action: {:?}", cell.action));
             ui.label(format!("Timer: {:?}", cell.action_timer));
+            ui.label(format!("Vision: {:?}", cell.vision_range));
         } else {
             ui.label("No cell selected");
         }

@@ -1,8 +1,5 @@
-use bevy::{color::palettes::css::GREEN, prelude::*};
-use bevy_egui::EguiPlugin;
-use rand::{Rng, SeedableRng};
-use rand_chacha::ChaCha12Rng;
-use uuid::Uuid;
+use bevy::prelude::*;
+use rand::Rng;
 
 use crate::common;
 
@@ -106,45 +103,14 @@ fn cell_reproduction(
 
             let distance = transform1.translation.distance(transform2.translation);
             if distance < 50.0 {
-                let offspring = common::Cell {
-                    parent_1: Some(cell1.id),
-                    parent_2: Some(cell2.id),
-                    id: Uuid::new_v4(),
-                    pos_x: (transform1.translation.x + transform2.translation.x) / 2.0,
-                    pos_y: (transform1.translation.y + transform2.translation.y) / 2.0,
-                    width: (cell1.width + cell2.width) / 2.0 * rng.gen_range(0.9..1.1),
-                    height: (cell1.height + cell2.height) / 2.0 * rng.gen_range(0.9..1.1),
-                    movement_speed: (cell1.movement_speed + cell2.movement_speed) / 2.0
-                        * rng.gen_range(0.9..1.1),
-                    vision_range: (cell1.vision_range + cell2.vision_range) / 2.0
-                        * rng.gen_range(0.9..1.1),
-                    health: 50.0,
-                    attack: (cell1.attack + cell2.attack) / 2.0 * rng.gen_range(0.9..1.1),
-                    target_location: None,
-                    offspring_probability: (cell1.offspring_probability
-                        + cell2.offspring_probability)
-                        / 2.0
-                        * rng.gen_range(0.9..1.1),
-                    family_color: blend_colors(
-                        cell1.family_color.to_linear(),
-                        cell2.family_color.to_linear(),
-                        rng,
-                    ),
-                    action: common::Action::RandomMovement,
-                    action_timer: Timer::from_seconds(rng.gen_range(5.0..10.0), TimerMode::Once),
-                    vision_angle: 90.0,
-                    rotation: 0.0,
-                };
-
-                commands.spawn((
-                    Mesh2d(meshes.add(Rectangle::new(offspring.width, offspring.height))),
-                    MeshMaterial2d(materials.add(offspring.family_color)),
-                    Transform::default().with_translation(Vec3::new(
-                        offspring.pos_x,
-                        offspring.pos_y,
-                        0.0,
-                    )),
-                    offspring,
+                commands.spawn(common::Cell::offspring(
+                    rng,
+                    &mut meshes,
+                    &mut materials,
+                    cell1,
+                    cell2,
+                    transform1,
+                    transform2,
                 ));
 
                 if let Ok(mut cell1_mut) = cell_query.get_mut(*entity1) {
@@ -156,14 +122,6 @@ fn cell_reproduction(
             }
         }
     }
-}
-
-fn blend_colors(color1: LinearRgba, color2: LinearRgba, rng: &mut ChaCha12Rng) -> Color {
-    let r = (color1.red + color2.red) / 2.0 * rng.gen_range(0.9..1.1);
-    let g = (color1.green + color2.green) / 2.0 * rng.gen_range(0.9..1.1);
-    let b = (color1.blue + color2.blue) / 2.0 * rng.gen_range(0.9..1.1);
-
-    Color::linear_rgb(r.clamp(0.0, 1.0), g.clamp(0.0, 1.0), b.clamp(0.0, 1.0))
 }
 
 fn draw_gismos(selected_cell: Res<common::CellSelected>, mut gizmos: Gizmos) {
@@ -197,7 +155,7 @@ fn draw_gismos(selected_cell: Res<common::CellSelected>, mut gizmos: Gizmos) {
 }
 
 fn decide_action(
-    mut cell_query: Query<(&mut common::Cell)>,
+    mut cell_query: Query<&mut common::Cell>,
     mut random_source: ResMut<common::RandomSource>,
     time: Res<Time>,
 ) {
@@ -304,7 +262,6 @@ fn is_within_vision_cone(
         cell_transform.rotation.to_euler(EulerRot::XYZ).2,
     ));
 
-    // Check if the target is within the vision range
     let distance = cell_transform
         .translation
         .truncate()
@@ -313,7 +270,6 @@ fn is_within_vision_cone(
         return false;
     }
 
-    // Check if the target is within the vision cone
-    let angle_to_target = cell_forward.angle_between(direction_to_target).to_degrees();
+    let angle_to_target = cell_forward.angle_to(direction_to_target).to_degrees();
     angle_to_target.abs() <= vision_angle / 2.0
 }
