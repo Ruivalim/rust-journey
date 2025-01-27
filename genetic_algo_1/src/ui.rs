@@ -48,34 +48,34 @@ pub fn ui_system(
         ui.label(format!("Highest Generation: {}", highest_generation));
         ui.checkbox(&mut game_options.draw_gizmos, "Draw Gizmos");
         ui.checkbox(&mut game_options.show_fittest, "Show Fittest");
-        ui.add(
-            egui::Slider::new(&mut game_options.movement_cost, 0.001..=1.0).text("Movement Cost"),
-        );
         ui.add(egui::Slider::new(&mut game_options.foods_per_day, 0..=10).text("Foods Per Day"));
         ui.add(egui::Slider::new(&mut game_options.mutation_rate, 0.1..=1.0).text("Mutation Rate"));
         ui.add(egui::Slider::new(&mut game_options.day_speed, 1.0..=100.0).text("Day Speed"));
-        ui.add(
-            egui::Slider::new(&mut game_options.hunger_over_time, 0.001..=1.0)
-                .text("Hunger Over Time"),
-        );
-        ui.add(
-            egui::Slider::new(&mut game_options.life_lost_on_hungry, 0.001..=1.0)
-                .text("Life lost on Hungry"),
-        );
     });
 
     egui::Window::new("Cell Viewer").show(contexts.ctx_mut(), |ui| {
         ui.separator();
+
         if let Some(cell) = &mut selected_cell.0 {
             ui.label(format!("ID: {}", cell.id.to_string()));
-            ui.label(format!("Width: {}", cell.width));
-            ui.label(format!("Height: {}", cell.height));
+            ui.label(format!("Width: {}", cell.genes.width));
+            ui.label(format!("Height: {}", cell.genes.height));
             ui.label(format!("Energy: {}", cell.energy));
             ui.label(format!("Health: {}", cell.health));
-            ui.label(format!("Pos X: {}", cell.pos_x));
-            ui.label(format!("Pox Y: {}", cell.pos_y));
-            ui.label(format!("Speed: {}", cell.movement_speed));
-            ui.label(format!("Vision: {:?}", cell.vision_range));
+            ui.label(format!("Speed: {}", cell.genes.movement_speed));
+            ui.label(format!("Vision: {:?}", cell.genes.vision_range));
+            ui.label(format!("Vision Angle: {:?}", cell.genes.vision_angle));
+            ui.label(format!("Metabolism: {:?}", cell.genes.metabolism));
+            ui.label(format!("Mature Age: {:?}", cell.genes.mature_age));
+            ui.label(format!("Target: {:?}", cell.target_location));
+            ui.label(format!(
+                "Birth Energy Loss: {:?}",
+                cell.genes.birth_energy_loss
+            ));
+            ui.label(format!(
+                "Reproduction Urge: {:?}",
+                cell.genes.reproduction_urge
+            ));
             ui.label(format!("Action: {:?}", cell.action));
             ui.label(format!("Hunger: {:?}", cell.hunger));
             ui.label(format!("Fitness: {:?}", cell.fitness));

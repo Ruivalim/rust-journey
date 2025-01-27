@@ -14,29 +14,15 @@ mod helpers;
 mod ui;
 
 fn main() {
-    let game_config = common::GameConfig {
-        movement_cost: 0.01,
-        hunger_over_time: 0.01,
-        map_height: 600.0,
-        map_width: 800.0,
-        foods_per_day: 0,
-        life_lost_on_hungry: 0.05,
-        current_day: 1,
-        day_speed: 1.0,
-        draw_gizmos: false,
-        mutation_rate: 0.1,
-        show_fittest: false,
-    };
-
     App::new()
         .add_plugins((DefaultPlugins, MeshPickingPlugin, EguiPlugin))
         .insert_resource(Time::<Fixed>::from_hz(60.0))
-        .insert_resource(game_config)
+        .insert_resource(common::GAME_CONFIG)
         .insert_resource(common::RandomSource(ChaCha12Rng::from_entropy()))
         .insert_resource(common::CellSelected(None))
         .add_systems(Startup, setup)
         .add_systems(Update, (helpers::camera::movement, game_tick))
-        .add_systems(FixedUpdate, day_night_cycle)
+        .add_systems(FixedUpdate, (day_night_cycle, metabolism_process))
         .add_plugins(ui::ui_plugin)
         .run();
 }
@@ -116,18 +102,13 @@ fn game_tick(
             commands.entity(entity).despawn();
             continue;
         }
-        cell.process_brain(&mut seeded_rng.0, &game_config);
+        cell.process_brain(&mut seeded_rng.0);
 
-        reward += 1.0;
+        reward += game_config.rewards.tick_alive;
 
         match cell.action {
             Action::Chilling => {
-                cell.target_location = None;
-                cell.energy =
-                    (cell.energy + if cell.energy < 30.0 { 1.5 } else { 0.5 }).clamp(0.0, 100.0);
-                if cell.hunger < 50.0 && cell.health < 100.0 {
-                    cell.health = (cell.health + 0.1).clamp(0.0, 100.0);
-                }
+                cell.rest();
             }
             Action::GoingForFood => {
                 let mut food_found = false;
@@ -137,10 +118,10 @@ fn game_tick(
                     if is_within_vision_cone(
                         &cell_transform,
                         food_position,
-                        cell.vision_range,
-                        cell.vision_angle,
+                        cell.genes.vision_range,
+                        cell.genes.vision_angle,
                     ) {
-                        reward += 10.0;
+                        reward += game_config.rewards.found_food;
                         cell.target_location = Some(food_position);
                         food_found = true;
                         break;
@@ -173,7 +154,7 @@ fn game_tick(
 
             Action::FindMate => {
                 let mut mate: Option<cell::Cell> = None;
-
+                // TODO: cone based vision to find, like the food
                 for (other_transform, other_cell, _) in query_snapshot.iter() {
                     let distance = cell_transform
                         .translation
@@ -196,7 +177,7 @@ fn game_tick(
                         .translation
                         .truncate()
                         .distance(Vec2::new(mate_cell.pos_x, mate_cell.pos_y))
-                        < 50.0
+                        < 10.0
                     {
                         let offspring = cell::Cell::create_offspring(
                             &mut seeded_rng.0,
@@ -208,27 +189,38 @@ fn game_tick(
                         );
 
                         commands.spawn(offspring);
-                        cell.energy -= 40.0;
+                        cell.energy -= cell.genes.birth_energy_loss;
+                        reward += game_config.rewards.reproduction;
                     }
                 } else {
-                    cell.random_target(&mut seeded_rng.0, &game_config);
+                    if cell.target_location.is_none()
+                        || cell_transform
+                            .translation
+                            .truncate()
+                            .distance(cell.target_location.unwrap())
+                            < 1.0
+                    {
+                        cell.random_target(&mut seeded_rng.0, &game_config);
+                    }
                 }
             }
         }
 
         if cell.hunger >= 100.0 {
-            reward -= 5.0;
+            reward -= game_config.rewards.hunger;
         }
 
-        // Fixed stuff
         for (food_transform, _, food_entity) in food_query.iter() {
             let distance = cell_transform
                 .translation
                 .distance(food_transform.translation);
             if distance < 1.0 {
+                // TODO: Change food properties
                 cell.energy = (cell.energy + 15.0).clamp(0.0, 100.0);
+                cell.health = (cell.energy + 15.0).clamp(0.0, 100.0);
                 cell.hunger = (cell.hunger - 15.0).clamp(0.0, 100.0);
                 commands.entity(food_entity).despawn();
+                reward += game_config.rewards.ate_food;
             }
         }
 
@@ -274,7 +266,7 @@ fn day_night_cycle(
     mut commands: Commands,
     time: Res<Time>,
     mut timer: ResMut<common::DayNightCycleTimer>,
-    mut cell_query: Query<(Entity, &mut cell::Cell)>,
+    mut cell_query: Query<&mut cell::Cell>,
     mut game_config: ResMut<common::GameConfig>,
     mut seeded_rng: ResMut<common::RandomSource>,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -295,18 +287,18 @@ fn day_night_cycle(
                 &mut materials,
             ));
         }
-        for (entity, mut cell) in cell_query.iter_mut() {
+        for mut cell in cell_query.iter_mut() {
             cell.age += 1;
 
-            if cell.age >= 18 && cell.age <= 50 {
-                cell.reproduction_urge = true;
-            } else {
-                cell.reproduction_urge = false;
-            }
-
-            if cell.age >= 80 {
-                commands.entity(entity).despawn();
+            if cell.age >= cell.genes.mature_age {
+                cell.mature = true;
             }
         }
+    }
+}
+
+fn metabolism_process(mut cell_query: Query<&mut cell::Cell>, time: Res<Time>) {
+    for mut cell in cell_query.iter_mut() {
+        cell.process_metabolism(time.delta_secs());
     }
 }
