@@ -1,3 +1,4 @@
+use bevy::color::palettes::css::{BLUE, PURPLE, RED, YELLOW};
 use bevy::prelude::*;
 use rand::Rng;
 use rand_chacha::ChaCha12Rng;
@@ -6,17 +7,18 @@ use uuid::Uuid;
 use crate::common::GameConfig;
 use crate::helpers::neural_network::NeuralNetwork;
 
-#[derive(Clone, Debug, Copy)]
+#[derive(Clone, Debug, Copy, PartialEq)]
 pub enum Action {
     Chilling,
     MovingAround,
     GoingForFood,
+    FindMate,
 }
 
 #[derive(Component, Clone, Debug)]
 pub struct Cell {
     pub fitness: f32,
-    pub generation_created: i32,
+    pub generation: i32,
     pub brain: NeuralNetwork,
     pub id: Uuid,
     pub pos_x: f32,
@@ -29,13 +31,15 @@ pub struct Cell {
     pub health: f32,
     pub hunger: f32,
     pub energy: f32,
-    pub age: f32,
+    pub age: i32,
+    pub reproduction_urge: bool,
     pub target_location: Option<Vec2>,
     pub color: Color,
     pub rotation: f32,
     pub action: Action,
 }
 
+#[allow(dead_code)]
 impl Cell {
     pub fn new(
         seeded_rng: &mut ChaCha12Rng,
@@ -66,17 +70,18 @@ impl Cell {
             crate::common::Collider,
             Cell {
                 fitness: 0.0,
-                brain: NeuralNetwork::new(7, 10, 3),
+                brain: NeuralNetwork::new(8, 10, 4),
                 id: Uuid::new_v4(),
                 pos_x: x,
                 pos_y: y,
+                generation: 0,
                 width,
                 hunger: 0.0,
                 height,
                 health: 100.0,
                 energy: 100.0,
-                generation_created: game_config.current_generation,
-                age: 0.0,
+                age: 0,
+                reproduction_urge: false,
                 movement_speed: seeded_rng.gen_range(15.0..100.0),
                 vision_range: seeded_rng.gen_range(100.0..400.0),
                 target_location: None,
@@ -97,7 +102,7 @@ impl Cell {
         self.action = Action::MovingAround;
     }
 
-    pub fn draw_gismos(&self, gizmos: &mut Gizmos) {
+    pub fn draw_vision(&self, gizmos: &mut Gizmos) {
         gizmos.circle_2d(
             Vec2::new(self.pos_x, self.pos_y),
             self.vision_range,
@@ -123,6 +128,17 @@ impl Cell {
         if let Some(location) = self.target_location {
             gizmos.circle_2d(location, 1.0, Color::linear_rgb(1.0, 0.0, 0.0));
         }
+    }
+
+    pub fn draw_gizmos(&self, gizmos: &mut Gizmos) {
+        match self.action {
+            Action::Chilling => gizmos.circle_2d(Vec2::new(self.pos_x, self.pos_y), 10.0, BLUE),
+            Action::GoingForFood => gizmos.circle_2d(Vec2::new(self.pos_x, self.pos_y), 10.0, RED),
+            Action::MovingAround => {
+                gizmos.circle_2d(Vec2::new(self.pos_x, self.pos_y), 10.0, YELLOW)
+            }
+            Action::FindMate => gizmos.circle_2d(Vec2::new(self.pos_x, self.pos_y), 10.0, PURPLE),
+        };
     }
 
     pub fn movement(&mut self, transform: &mut Transform, game_config: &GameConfig, time: f32) {
@@ -151,16 +167,7 @@ impl Cell {
         }
     }
 
-    pub fn process_brain(
-        &mut self,
-        transform: &mut Transform,
-        food_query: &mut Query<
-            (&mut Transform, &mut crate::food::Food, Entity),
-            (With<crate::food::Food>, Without<Cell>),
-        >,
-        rng: &mut ChaCha12Rng,
-        game_config: &GameConfig,
-    ) {
+    pub fn process_brain(&mut self, rng: &mut ChaCha12Rng, game_config: &GameConfig) {
         self.hunger = (self.hunger + game_config.hunger_over_time).clamp(0.0, 100.0);
 
         if self.hunger == 100.0 {
@@ -170,6 +177,7 @@ impl Cell {
         let low_energy = if self.energy < 30.0 { 1.0 } else { 0.0 };
         let high_hunger = if self.hunger > 70.0 { 1.0 } else { 0.0 };
         let is_healthy = if self.health > 70.0 { 1.0 } else { 0.0 };
+        let has_urge_to_reproduce = if self.reproduction_urge { 1.0 } else { 0.0 };
 
         let inputs = ndarray::array![
             100.0 / self.hunger,
@@ -178,6 +186,7 @@ impl Cell {
             low_energy,
             high_hunger,
             is_healthy,
+            has_urge_to_reproduce,
             rng.gen_range(0.0..1.0),
         ];
 
@@ -193,6 +202,13 @@ impl Cell {
             0 => Action::Chilling,
             1 => Action::MovingAround,
             2 => Action::GoingForFood,
+            3 => {
+                if self.reproduction_urge {
+                    Action::FindMate
+                } else {
+                    Action::Chilling
+                }
+            }
             _ => Action::Chilling,
         };
     }
@@ -217,6 +233,122 @@ impl Cell {
                     .unwrap()
             })
     }
+
+    pub fn create_offspring(
+        seeded_rng: &mut ChaCha12Rng,
+        game_config: &GameConfig,
+        meshes: &mut Assets<Mesh>,
+        materials: &mut Assets<ColorMaterial>,
+        parent1: Cell,
+        parent2: Cell,
+    ) -> (
+        bevy::prelude::Mesh2d,
+        bevy::prelude::MeshMaterial2d<ColorMaterial>,
+        bevy::prelude::Transform,
+        crate::common::Collider,
+        Cell,
+    ) {
+        let mut offspring_network = NeuralNetwork::crossover(&parent1.brain, &parent2.brain);
+        Cell::mutate(&mut offspring_network, game_config);
+
+        let width = blend(
+            parent1.width,
+            parent2.width,
+            seeded_rng,
+            game_config.mutation_rate,
+        );
+        let height = blend(
+            parent1.height,
+            parent2.height,
+            seeded_rng,
+            game_config.mutation_rate,
+        );
+        let movement_speed = blend(
+            parent1.movement_speed,
+            parent2.movement_speed,
+            seeded_rng,
+            game_config.mutation_rate,
+        );
+        let vision_range = blend(
+            parent1.vision_range,
+            parent2.vision_range,
+            seeded_rng,
+            game_config.mutation_rate,
+        );
+        let vision_angle = blend(
+            parent1.vision_angle,
+            parent2.vision_angle,
+            seeded_rng,
+            game_config.mutation_rate,
+        );
+        let color = blend_colors(
+            parent1.color.to_linear(),
+            parent2.color.to_linear(),
+            seeded_rng,
+        );
+
+        let mut highest_generation = parent1.generation;
+
+        if parent2.generation > highest_generation {
+            highest_generation = parent2.generation;
+        }
+
+        let x = parent1.pos_x;
+        let y = parent1.pos_y;
+
+        return (
+            Mesh2d(meshes.add(Rectangle::new(width, height))),
+            MeshMaterial2d(materials.add(Color::from(color))),
+            Transform::default().with_translation(Vec3::new(x, y, 0.0)),
+            crate::common::Collider,
+            Cell {
+                fitness: 0.0,
+                brain: NeuralNetwork::new(8, 10, 4),
+                id: Uuid::new_v4(),
+                pos_x: x,
+                pos_y: y,
+                width,
+                hunger: 0.0,
+                height,
+                health: 100.0,
+                energy: 100.0,
+                age: 0,
+                reproduction_urge: false,
+                movement_speed,
+                vision_range,
+                target_location: None,
+                color,
+                vision_angle,
+                rotation: 0.0,
+                action: Action::Chilling,
+                generation: highest_generation + 1,
+            },
+        );
+    }
+
+    pub fn mutate(network: &mut NeuralNetwork, game_config: &GameConfig) {
+        let mut rng = rand::thread_rng();
+        for weight in network.weights_input_hidden.iter_mut() {
+            if rng.gen::<f32>() < game_config.mutation_rate {
+                *weight += rng.gen_range(-0.1..0.1);
+            }
+        }
+        for weight in network.weights_hidden_output.iter_mut() {
+            if rng.gen::<f32>() < game_config.mutation_rate {
+                *weight += rng.gen_range(-0.1..0.1);
+            }
+        }
+        for bias in network.biases_hidden.iter_mut() {
+            if rng.gen::<f32>() < game_config.mutation_rate {
+                *bias += rng.gen_range(-0.1..0.1);
+            }
+        }
+        for bias in network.biases_output.iter_mut() {
+            if rng.gen::<f32>() < game_config.mutation_rate {
+                *bias += rng.gen_range(-0.1..0.1);
+            }
+        }
+    }
 }
 
 pub fn blend_colors(color1: LinearRgba, color2: LinearRgba, rng: &mut ChaCha12Rng) -> Color {
@@ -225,4 +357,9 @@ pub fn blend_colors(color1: LinearRgba, color2: LinearRgba, rng: &mut ChaCha12Rn
     let b = (color1.blue + color2.blue) / 2.0 * rng.gen_range(0.9..1.1);
 
     Color::linear_rgb(r.clamp(0.0, 1.0), g.clamp(0.0, 1.0), b.clamp(0.0, 1.0))
+}
+
+pub fn blend(value1: f32, value2: f32, seeded_rng: &mut ChaCha12Rng, mutation_rate: f32) -> f32 {
+    let average = (value1 + value2) / 2.0;
+    average + seeded_rng.gen_range(-mutation_rate..mutation_rate) * average
 }

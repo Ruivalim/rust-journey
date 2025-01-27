@@ -36,4 +36,45 @@ impl NeuralNetwork {
     fn sigmoid(x: f32) -> f32 {
         1.0 / (1.0 + (-x).exp())
     }
+
+    pub fn crossover(parent1: &NeuralNetwork, parent2: &NeuralNetwork) -> NeuralNetwork {
+        let mut rng = rand::thread_rng();
+
+        let weights_input_hidden = parent1.weights_input_hidden.mapv(|v| {
+            if rng.gen_bool(0.5) {
+                v
+            } else {
+                parent2.weights_input_hidden[[0, 0]]
+            }
+        });
+        let weights_hidden_output = parent1.weights_hidden_output.mapv(|v| {
+            if rng.gen_bool(0.5) {
+                v
+            } else {
+                parent2.weights_hidden_output[[0, 0]]
+            }
+        });
+
+        let biases_hidden = parent1.biases_hidden.mapv(|v| {
+            if rng.gen_bool(0.5) {
+                v
+            } else {
+                parent2.biases_hidden[0]
+            }
+        });
+        let biases_output = parent1.biases_output.mapv(|v| {
+            if rng.gen_bool(0.5) {
+                v
+            } else {
+                parent2.biases_output[0]
+            }
+        });
+
+        NeuralNetwork {
+            weights_input_hidden,
+            weights_hidden_output,
+            biases_hidden,
+            biases_output,
+        }
+    }
 }

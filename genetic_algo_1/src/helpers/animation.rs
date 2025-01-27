@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use std::time::Duration;
-
+#[allow(dead_code)]
 #[derive(Clone, Debug)]
 pub struct AnimationState {
     pub name: String,
@@ -53,6 +53,7 @@ pub struct AnimationConfig {
     update_animation: bool,
 }
 
+#[allow(dead_code)]
 impl AnimationConfig {
     pub fn new(animations: Vec<AnimationState>, fps: u8) -> Self {
         Self {
@@ -113,6 +114,7 @@ impl AnimationConfig {
     }
 }
 
+#[allow(dead_code)]
 pub fn execute_animations_system(
     time: Res<Time>,
     mut query: Query<(&mut AnimationConfig, &mut Sprite), With<AnimationConfig>>,

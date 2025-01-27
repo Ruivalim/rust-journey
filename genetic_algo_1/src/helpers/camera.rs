@@ -1,6 +1,5 @@
 use bevy::{input::ButtonInput, prelude::*, render::camera::Camera};
-use std::cmp;
-
+#[allow(dead_code)]
 pub struct ZoomKeys {
     pub zoom_in: KeyCode,
     pub zoom_out: KeyCode,
@@ -8,13 +7,13 @@ pub struct ZoomKeys {
     pub max_scale: f32,
     pub zoom_step: f32,
 }
-
+#[allow(dead_code)]
 pub struct FollowingConfigs {
     pub fixed_at_object: bool,
     pub distance_of_movement_without_camera_movement_x: f32,
     pub distance_of_movement_without_camera_movement_y: f32,
 }
-
+#[allow(dead_code)]
 impl FollowingConfigs {
     pub fn default() -> FollowingConfigs {
         return FollowingConfigs {
@@ -32,12 +31,12 @@ impl FollowingConfigs {
         };
     }
 }
-
+#[allow(dead_code)]
 pub struct CameraBehaviors {
     pub zoom_keys: Option<ZoomKeys>,
     pub following_configs: FollowingConfigs,
 }
-
+#[allow(dead_code)]
 fn signed_distance_to_range(num: f32, min: f32, max: f32) -> f32 {
     if num < min {
         min - num
@@ -47,7 +46,7 @@ fn signed_distance_to_range(num: f32, min: f32, max: f32) -> f32 {
         0.0
     }
 }
-
+#[allow(dead_code)]
 // This camera follows the player
 pub fn configure_camera_2d<T: Component>(
     behaviors: CameraBehaviors,
