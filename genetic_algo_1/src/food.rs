@@ -12,7 +12,7 @@ impl Food {
     pub fn new(
         seeded_rng: &mut ChaCha12Rng,
         game_config: &crate::common::GameConfig,
-        meshes: &mut Assets<Mesh>,
+        food_mesh: &Handle<Mesh>,
         materials: &mut Assets<ColorMaterial>,
     ) -> (
         bevy::prelude::Mesh2d,
@@ -25,8 +25,8 @@ impl Food {
         let y = seeded_rng.gen_range(-game_config.map_height / 2.0..game_config.map_height / 2.0);
 
         return (
-            Mesh2d(meshes.add(Rectangle::new(15., 15.))),
-            MeshMaterial2d(materials.add(Color::from(GREEN))),
+            Mesh2d(food_mesh.clone()),
+            MeshMaterial2d(materials.add(Color::hsl(128., 0.15, 0.61))),
             Transform::default().with_translation(Vec3::new(x, y, 0.0)),
             crate::common::Collider,
             Food { pos_x: x, pos_y: y },

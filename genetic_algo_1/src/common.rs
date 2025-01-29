@@ -7,6 +7,12 @@ pub struct CellSelected(pub Option<crate::cell::Cell>);
 #[derive(Resource)]
 pub struct RandomSource(pub ChaCha12Rng);
 
+#[derive(Resource)]
+pub struct FoodMesh(pub Handle<Mesh>);
+
+#[derive(Resource)]
+pub struct CellMesh(pub Handle<Mesh>);
+
 pub struct Rewards {
     pub tick_alive: f32,
     pub found_food: f32,
@@ -26,6 +32,8 @@ pub struct GameConfig {
     pub show_fittest: bool,
     pub rewards: Rewards,
     pub debug_logs: bool,
+    pub paused: bool,
+    pub dead_cells: i32,
 }
 
 pub const REWARDS: Rewards = Rewards {
@@ -46,6 +54,8 @@ pub const GAME_CONFIG: GameConfig = GameConfig {
     show_fittest: false,
     rewards: REWARDS,
     debug_logs: false,
+    paused: true,
+    dead_cells: 0,
 };
 
 #[derive(Component)]
